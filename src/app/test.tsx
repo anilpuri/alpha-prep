@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, BackHandler, FlatList, PanResponder, Animated, Easing,
+  Alert, BackHandler, FlatList, PanResponder, Animated,
 } from "react-native";
 import { ConfirmSheet } from "../components/ConfirmSheet";
+import { Spinner } from "../components/Spinner";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -53,24 +54,6 @@ export default function TestScreen() {
   const [leaveVisible,  setLeaveVisible]  = useState(false);
   const [submitVisible, setSubmitVisible] = useState(false);
 
-  // Loading spinner & pulse
-  const spinAnim  = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(0.95)).current;
-  useEffect(() => {
-    if (!loading) return;
-    const spin = Animated.loop(
-      Animated.timing(spinAnim, { toValue: 1, duration: 1300, easing: Easing.linear, useNativeDriver: true })
-    );
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.08, duration: 850, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.95, duration: 850, useNativeDriver: true }),
-      ])
-    );
-    spin.start();
-    pulse.start();
-    return () => { spin.stop(); pulse.stop(); };
-  }, [loading]);
 
   // Refs needed inside PanResponder closure (created once, must read latest state)
   const currentRef      = useRef(0);
@@ -265,44 +248,20 @@ export default function TestScreen() {
   }, [qState, performSubmit]);
 
   // ── Render states ────────────────────────────────────────────────────────────
-  if (loading) {
-    const spinDeg = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.bg }}>
-        {/* Spinner ring + pulsing icon centre */}
-        <View style={{ width: 108, height: 108, alignItems: "center", justifyContent: "center" }}>
-          <Animated.View style={{
-            position: "absolute",
-            width: 108, height: 108, borderRadius: 54,
-            borderWidth: 3,
-            borderTopColor: accentColor,
-            borderRightColor: accentColor + "55",
-            borderBottomColor: "transparent",
-            borderLeftColor: "transparent",
-            transform: [{ rotate: spinDeg }],
-          }} />
-          <Animated.View style={{
-            width: 76, height: 76, borderRadius: 38,
-            backgroundColor: accentColor + "14",
-            alignItems: "center", justifyContent: "center",
-            transform: [{ scale: pulseAnim }],
-          }}>
-            <Text style={{ fontSize: 34 }}>{subjectEmoji(config.subject || "")}</Text>
-          </Animated.View>
-        </View>
-
-        <Text style={{ color: theme.text, fontSize: 18, fontWeight: "900", marginTop: 26, letterSpacing: 0.3 }}>
-          Fetching Questions
-        </Text>
-        <Text style={{ color: accentColor, fontSize: 13, fontWeight: "700", marginTop: 5 }} numberOfLines={1}>
-          {config.topicName}
-        </Text>
-        <Text style={{ color: theme.muted, fontSize: 12, marginTop: 16 }}>
-          Preparing your {config.mode} session…
-        </Text>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.bg }}>
+      <Spinner color={accentColor} size={108} icon={subjectEmoji(config.subject || "")} />
+      <Text style={{ color: theme.text, fontSize: 18, fontWeight: "900", marginTop: 26, letterSpacing: 0.3 }}>
+        Fetching Questions
+      </Text>
+      <Text style={{ color: accentColor, fontSize: 13, fontWeight: "700", marginTop: 5 }} numberOfLines={1}>
+        {config.topicName}
+      </Text>
+      <Text style={{ color: theme.muted, fontSize: 12, marginTop: 16 }}>
+        Preparing your {config.mode} session…
+      </Text>
+    </View>
+  );
 
   if (loadErr || questions.length === 0) return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.bg, padding: 32 }}>

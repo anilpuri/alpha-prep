@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from "react-native";
+import { Spinner } from "../../components/Spinner";
 import { useRouter } from "expo-router";
 import { fetchTree } from "../../lib/db";
 import { useTheme } from "../../lib/theme-context";
@@ -39,7 +40,7 @@ export default function Subjects() {
 
   if (loading) return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.bg }}>
-      <ActivityIndicator size="large" color={theme.primary} />
+      <Spinner icon="📚" label="Loading Subjects" sublabel="Fetching question bank…" />
     </View>
   );
   if (err) return (

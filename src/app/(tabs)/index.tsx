@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Animated,
+  RefreshControl, Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { fetchAttempts } from "../../lib/db";
 import { useTheme } from "../../lib/theme-context";
 import { subjectAccent, accuracyColor, pctStr } from "../../lib/theme";
+import { Spinner } from "../../components/Spinner";
 import { formatDuration } from "../../lib/timer";
 import type { Attempt, TopicStats } from "../../lib/types";
 
@@ -165,7 +166,7 @@ export default function ReportCard() {
 
   if (loading) return (
     <View style={{ flex: 1, backgroundColor: theme.bg, justifyContent: "center", alignItems: "center" }}>
-      <ActivityIndicator size="large" color={theme.primary} />
+      <Spinner icon="📊" label="Loading Reports" sublabel="Analysing your attempts…" />
     </View>
   );
 

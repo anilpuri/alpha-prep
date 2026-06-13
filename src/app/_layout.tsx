@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { ThemeProvider, useTheme } from "../lib/theme-context";
@@ -11,6 +11,17 @@ const SPLASH_PRI = "#8880D5";
 const SPLASH_LT  = "#1A1535";
 const SPLASH_TXT = "#E0E0E0";
 const SPLASH_SUB = "#787878";
+
+// ── Expo-style chevron icon (gradient purple, transparent bg) ────────────────
+function AMarkIcon() {
+  return (
+    <Image
+      source={require("../../assets/images/splash-icon.png")}
+      style={{ width: 72, height: 67 }}
+      resizeMode="contain"
+    />
+  );
+}
 
 // ── App splash shown once on cold start ───────────────────────────────────────
 function SplashOverlay({ onDone }: { onDone: () => void }) {
@@ -71,7 +82,7 @@ function SplashOverlay({ onDone }: { onDone: () => void }) {
         opacity:         logoFade,
         transform:       [{ scale: logoScale }],
       }]}>
-        <Text style={[s.logoAlpha, { color: SPLASH_PRI }]}>α</Text>
+        <AMarkIcon />
       </Animated.View>
 
       {/* App name + tagline */}
@@ -169,7 +180,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 28,
     shadowOffset: { width: 0, height: 0 }, elevation: 18,
   },
-  logoAlpha: { fontSize: 60, fontWeight: "900", lineHeight: 74 },
   appName:   { fontSize: 28, fontWeight: "900", letterSpacing: 8, marginTop: 4 },
   tagline:   { fontSize: 13, letterSpacing: 2, marginTop: 4 },
   dot:       { height: 6, borderRadius: 3 },

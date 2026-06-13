@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
 } from "react-native";
+import { Spinner } from "../../components/Spinner";
 import { useAuth } from "../../lib/auth-context";
 import { useTheme } from "../../lib/theme-context";
 import { fetchAttempts } from "../../lib/db";
@@ -57,7 +58,9 @@ export default function Profile() {
         {/* Stats summary */}
         <Text style={[s.sectionTitle, { color: theme.sub }]}>YOUR STATS</Text>
         {loadingStats ? (
-          <ActivityIndicator color={theme.primary} />
+          <View style={{ alignItems: "center", paddingVertical: 16 }}>
+            <Spinner size={52} label="Loading Stats" />
+          </View>
         ) : (
           <View style={[s.statsRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <StatBox label="Tests"      value={String(totalTests)}          />

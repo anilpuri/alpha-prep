@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Alert, ActivityIndicator,
 } from "react-native";
+import { Spinner } from "../../components/Spinner";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { useTheme } from "../../lib/theme-context";
@@ -206,8 +207,7 @@ export default function HistoryScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.bg, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={{ color: theme.sub, marginTop: 12, fontSize: 15 }}>Loading history...</Text>
+        <Spinner icon="📋" label="Loading History" sublabel="Fetching your test sessions…" />
       </View>
     );
   }

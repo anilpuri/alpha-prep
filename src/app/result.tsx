@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Animated, ActivityIndicator,
+  Animated,
 } from "react-native";
+import { Spinner } from "../components/Spinner";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -174,9 +175,8 @@ export default function ResultScreen() {
 
         {/* Review answers section */}
         {loadingQs ? (
-          <View style={{ alignItems: "center", paddingVertical: 20 }}>
-            <ActivityIndicator color={theme.primary} />
-            <Text style={{ color: theme.sub, marginTop: 8 }}>Loading questions for review...</Text>
+          <View style={{ alignItems: "center", paddingVertical: 28 }}>
+            <Spinner size={64} icon="📝" label="Loading Review" />
           </View>
         ) : questions.length > 0 ? (
           <>

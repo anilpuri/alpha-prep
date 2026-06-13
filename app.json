@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "alpha",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.alpha.cgl",
       "supportsTablet": true
@@ -17,7 +16,8 @@
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
-      }
+      },
+      "versionCode": 3
     },
     "web": {
       "output": "static",
@@ -35,6 +35,13 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "22d1d715-4f2e-4ad5-baee-ece5b03c8103"
+      }
+    },
+    "owner": "anilpuri"
   }
 }

@@ -4,13 +4,15 @@ import {
   Animated,
 } from "react-native";
 import { Spinner } from "../components/Spinner";
+import { ConceptModal } from "../components/ConceptModal";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useTheme } from "../lib/theme-context";
 import { subjectAccent, accuracyColor, pctStr } from "../lib/theme";
 import { formatDuration } from "../lib/timer";
-import { stripHtml } from "../lib/utils";
+import { stripHtml, extractImages } from "../lib/utils";
+import { QuestionImage } from "../components/QuestionImage";
 import type { Attempt, Question } from "../lib/types";
 
 type Review = "all" | "wrong" | "correct" | "skipped";
@@ -30,6 +32,7 @@ export default function ResultScreen() {
 
   const [review,      setReview]      = useState<Review | null>(null);
   const [expandedQid, setExpandedQid] = useState<number | null>(null);
+  const [conceptQ,    setConceptQ]    = useState<typeof questions[0] | null>(null);
 
   // Animated score counter
   const scoreAnim    = useRef(new Animated.Value(0)).current;
@@ -222,6 +225,9 @@ export default function ResultScreen() {
                       {r?.correct ? "✅ Correct" : r?.selected === null ? "⏭ Skipped" : "❌ Wrong"}
                       <Text style={{ color: theme.muted }}>  ·  Q{ri + 1}</Text>
                     </Text>
+                    {isExpanded && extractImages(q.question).map((url, i) => (
+                      <QuestionImage key={i} uri={url} />
+                    ))}
                     <Text
                       style={{ color: theme.text, fontWeight: "600", marginTop: 4, lineHeight: 20 }}
                       numberOfLines={isExpanded ? undefined : 2}
@@ -259,6 +265,22 @@ export default function ResultScreen() {
                             </Text>
                           </View>
                         ) : null}
+                        {/* AI Concept button */}
+                        <TouchableOpacity
+                          onPress={() => setConceptQ(q)}
+                          style={[{
+                            marginTop: 8, borderRadius: 10, borderWidth: 1,
+                            paddingHorizontal: 12, paddingVertical: 8,
+                            flexDirection: "row", alignItems: "center", gap: 8,
+                            backgroundColor: theme.primary + "12",
+                            borderColor: theme.primary + "40",
+                          }]}
+                        >
+                          <Text style={{ fontSize: 14 }}>🧠</Text>
+                          <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 12 }}>
+                            Understand concept (AI)
+                          </Text>
+                        </TouchableOpacity>
                       </>
                     )}
                   </View>
@@ -267,6 +289,13 @@ export default function ResultScreen() {
             })}
           </>
         ) : null}
+
+        {/* Concept Modal */}
+        <ConceptModal
+          visible={conceptQ !== null}
+          question={conceptQ}
+          onClose={() => setConceptQ(null)}
+        />
 
         {/* Actions */}
         <TouchableOpacity

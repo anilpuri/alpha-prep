@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Text, StyleSheet, KeyboardAvoidingView, Platform,
-  ScrollView, TouchableOpacity, View, TextInput,
+  ScrollView, TouchableOpacity, View, TextInput, Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
@@ -55,7 +55,8 @@ export default function Register() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={s.wrap} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[s.wrap, { backgroundColor: theme.bg }]} keyboardShouldPersistTaps="handled">
+        <Image source={require("../../../assets/images/icon.png")} style={s.logo} resizeMode="contain" />
         <Text style={[s.title, { color: theme.text }]}>Create account</Text>
         <Text style={[s.tag, { color: theme.sub }]}>Start practicing 25,000+ SSC CGL PYQs</Text>
 
@@ -68,6 +69,8 @@ export default function Register() {
             placeholder="Your name"
             placeholderTextColor={theme.muted}
             autoCapitalize="words"
+            textContentType="name"
+            autoComplete="name"
             style={[s.input, { backgroundColor: theme.bg2, borderColor: theme.border, color: theme.text }]}
           />
 
@@ -81,6 +84,8 @@ export default function Register() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="emailAddress"
+            autoComplete="email"
             style={[s.input, { backgroundColor: theme.bg2, borderColor: theme.border, color: theme.text }]}
           />
 
@@ -95,6 +100,8 @@ export default function Register() {
               secureTextEntry={!showPass}
               autoCapitalize="none"
               autoCorrect={false}
+              textContentType="newPassword"
+              autoComplete="new-password"
               style={[s.passInput, { color: theme.text }]}
             />
             <TouchableOpacity onPress={() => setShowPass(v => !v)} style={s.eyeBtn} activeOpacity={0.7}>
@@ -113,6 +120,8 @@ export default function Register() {
               secureTextEntry={!showConfirm}
               autoCapitalize="none"
               autoCorrect={false}
+              textContentType="newPassword"
+              autoComplete="new-password"
               style={[s.passInput, { color: theme.text }]}
             />
             <TouchableOpacity onPress={() => setShowConfirm(v => !v)} style={s.eyeBtn} activeOpacity={0.7}>
@@ -137,6 +146,7 @@ export default function Register() {
 
 const s = StyleSheet.create({
   wrap:      { flexGrow: 1, justifyContent: "center", padding: 24 },
+  logo:      { width: 88, height: 88, alignSelf: "center", marginBottom: 12 },
   title:     { fontSize: 28, fontWeight: "900", textAlign: "center" },
   tag:       { fontSize: 14, textAlign: "center", marginTop: 4 },
   footer:    { flexDirection: "row", justifyContent: "center", marginTop: 20 },

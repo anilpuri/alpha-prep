@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, TouchableOpacity, TextInput,
+  Platform, ScrollView, TouchableOpacity, TextInput, Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
@@ -55,7 +55,7 @@ export default function Login() {
         contentContainerStyle={[s.wrap, { backgroundColor: theme.bg }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={s.logo}>🎯</Text>
+        <Image source={require("../../../assets/images/icon.png")} style={s.logo} resizeMode="contain" />
         <Text style={[s.title, { color: theme.text }]}>Alpha</Text>
         <Text style={[s.tag, { color: theme.sub }]}>SSC CGL Mock Tests & Analytics</Text>
 
@@ -70,6 +70,8 @@ export default function Login() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="emailAddress"
+            autoComplete="email"
             style={[s.input, { backgroundColor: theme.bg2, borderColor: theme.border, color: theme.text }]}
           />
 
@@ -84,6 +86,8 @@ export default function Login() {
               secureTextEntry={!showPass}
               autoCapitalize="none"
               autoCorrect={false}
+              textContentType="password"
+              autoComplete="current-password"
               style={[s.passInput, { color: theme.text }]}
             />
             <TouchableOpacity onPress={() => setShowPass(v => !v)} style={s.eyeBtn} activeOpacity={0.7}>
@@ -115,7 +119,7 @@ export default function Login() {
 
 const s = StyleSheet.create({
   wrap:      { flexGrow: 1, justifyContent: "center", padding: 24 },
-  logo:      { fontSize: 48, textAlign: "center" },
+  logo:      { width: 88, height: 88, alignSelf: "center" },
   title:     { fontSize: 32, fontWeight: "900", textAlign: "center", marginTop: 8 },
   tag:       { fontSize: 14, textAlign: "center", marginTop: 4 },
   footer:    { flexDirection: "row", justifyContent: "center", marginTop: 20 },

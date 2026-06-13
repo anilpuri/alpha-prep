@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, BackHandler, FlatList, PanResponder, Animated,
+  Alert, BackHandler, FlatList, PanResponder, Animated, Image,
 } from "react-native";
 import { ConfirmSheet } from "../components/ConfirmSheet";
 import { Spinner } from "../components/Spinner";
+import { ConceptModal } from "../components/ConceptModal";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -16,7 +17,9 @@ import {
 } from "../lib/db";
 import { allowedTimeSec, formatTime } from "../lib/timer";
 import { subjectAccent, subjectEmoji } from "../lib/theme";
-import { stripHtml } from "../lib/utils";
+import { stripHtml, extractImages } from "../lib/utils";
+import { QuestionImage } from "../components/QuestionImage";
+import { checkAndAwardAchievements, fetchAttempts } from "../lib/db";
 import type { TestConfig, Question, Attempt, PerQuestionResult } from "../lib/types";
 
 type QState = "unanswered" | "answered" | "review";
@@ -54,12 +57,43 @@ export default function TestScreen() {
   const [leaveVisible,  setLeaveVisible]  = useState(false);
   const [submitVisible, setSubmitVisible] = useState(false);
 
+  // AI concept modal
+  const [conceptVisible, setConceptVisible] = useState(false);
+
+  // Sectional support for AI papers
+  const [sectionBoundaries, setSectionBoundaries] = useState<number[]>([]);
+  const sectionOf = (idx: number) =>
+    sectionBoundaries.slice().reverse().findIndex(b => idx >= b);
+  const currentSectionLabel = () => {
+    if (!config.sections?.length || !sectionBoundaries.length) return null;
+    const si = sectionBoundaries.reduce((acc, b, i) => b <= current ? i : acc, 0);
+    return config.sections[si]?.subject ?? null;
+  };
+
 
   // Refs needed inside PanResponder closure (created once, must read latest state)
   const currentRef      = useRef(0);
   const questionsLenRef = useRef(0);
   useEffect(() => { currentRef.current = current; }, [current]);
   useEffect(() => { questionsLenRef.current = questions.length; }, [questions]);
+
+  // Slide animation for question transitions
+  const slideX   = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  const animateTo = useCallback((dir: 1 | -1, nextIdx: number) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 0, duration: 100, useNativeDriver: true }),
+      Animated.timing(slideX,    { toValue: dir * -30, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      setCurrent(nextIdx);
+      slideX.setValue(dir * 30);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 140, useNativeDriver: true }),
+        Animated.timing(slideX,   { toValue: 0, duration: 140, useNativeDriver: true }),
+      ]).start();
+    });
+  }, [fadeAnim, slideX]);
 
   // Swipe left/right → next/prev question
   const swipePan = useRef(
@@ -68,43 +102,63 @@ export default function TestScreen() {
         Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5 && Math.abs(gs.dx) > 20,
       onPanResponderRelease: (_, gs) => {
         if (gs.dx < -50 && currentRef.current < questionsLenRef.current - 1) {
-          setCurrent(c => c + 1);
+          animateTo(1, currentRef.current + 1);
         } else if (gs.dx > 50 && currentRef.current > 0) {
-          setCurrent(c => c - 1);
+          animateTo(-1, currentRef.current - 1);
         }
       },
     })
   ).current;
 
-  // ── Load questions ───────────────────────────────────────────────────────────
+  // ── Load questions (single-topic or multi-section AI paper) ─────────────────
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        // Load all bank parts for this topic
-        const all: Question[] = [];
-        for (let p = 1; p <= 10; p++) {
-          const snap = await getDoc(doc(db, "banks", `${config.topicId}_p${p}`));
-          if (!snap.exists()) break;
-          all.push(...(snap.data().questions as Question[]));
+
+        let chosen: Question[] = [];
+
+        if (config.sections?.length) {
+          // ── AI Paper: load from multiple topics per section ──────────────
+          const boundaries: number[] = [];
+          for (const section of config.sections) {
+            boundaries.push(chosen.length);
+            const sectionQs: Question[] = [];
+            const perTopic = Math.ceil(section.nQuestions / Math.max(1, section.topicIds.length));
+
+            for (const topicId of section.topicIds) {
+              const topicQs: Question[] = [];
+              for (let p = 1; p <= 10; p++) {
+                const snap = await getDoc(doc(db, "banks", `${topicId}_p${p}`));
+                if (!snap.exists()) break;
+                topicQs.push(...(snap.data().questions as Question[]));
+              }
+              sectionQs.push(...pickRandom(topicQs, Math.min(perTopic, topicQs.length)));
+            }
+            chosen.push(...pickRandom(sectionQs, Math.min(section.nQuestions, sectionQs.length)));
+          }
+          setSectionBoundaries(boundaries);
+        } else {
+          // ── Single topic ─────────────────────────────────────────────────
+          const all: Question[] = [];
+          for (let p = 1; p <= 10; p++) {
+            const snap = await getDoc(doc(db, "banks", `${config.topicId}_p${p}`));
+            if (!snap.exists()) break;
+            all.push(...(snap.data().questions as Question[]));
+          }
+
+          const [seen, wrong, bookmarked] = user
+            ? await Promise.all([
+                fetchSeenQids(user.uid, config.topicId),
+                fetchWrongQids(user.uid, config.topicId),
+                fetchBookmarkedQids(user.uid, config.topicId),
+              ])
+            : [new Set<number>(), new Set<number>(), new Set<number>()];
+
+          setLocalBookmarks(new Set(bookmarked));
+          const pool = filterPool(all, seen, config.pool, wrong, bookmarked);
+          chosen = pickRandom(pool, Math.min(config.nQuestions, pool.length));
         }
-
-        // Load user pool-related data in parallel
-        const [seen, wrong, bookmarked] = user
-          ? await Promise.all([
-              fetchSeenQids(user.uid, config.topicId),
-              fetchWrongQids(user.uid, config.topicId),
-              fetchBookmarkedQids(user.uid, config.topicId),
-            ])
-          : [new Set<number>(), new Set<number>(), new Set<number>()];
-
-        // Init local bookmark display
-        setLocalBookmarks(new Set(bookmarked));
-
-        // Filter by pool, then pick randomly — this ensures questions are
-        // always a different random sample when there are more available
-        const pool   = filterPool(all, seen, config.pool, wrong, bookmarked);
-        const chosen = pickRandom(pool, Math.min(config.nQuestions, pool.length));
 
         setQuestions(chosen);
         setSelected(new Array(chosen.length).fill(null));
@@ -224,12 +278,32 @@ export default function TestScreen() {
     let attemptId = "";
     if (user) {
       attemptId = await saveAttempt(user.uid, attempt).catch(() => "");
-      // Mark seen and wrong in parallel (best-effort)
       const wrongQids = perQuestion.filter(r => !r.correct && r.selected !== null).map(r => r.qid);
+      const topicForMark = config.topicId !== "ai_paper" ? config.topicId : (config.sections?.[0]?.topicIds[0] ?? "");
       await Promise.all([
-        markSeen(user.uid, config.topicId, questions.map(q => q.qid)).catch(() => {}),
-        markWrong(user.uid, config.topicId, wrongQids).catch(() => {}),
+        topicForMark ? markSeen(user.uid, topicForMark, questions.map(q => q.qid)).catch(() => {}) : Promise.resolve(),
+        topicForMark ? markWrong(user.uid, topicForMark, wrongQids).catch(() => {}) : Promise.resolve(),
       ]);
+      // Check achievements in background
+      fetchAttempts(user.uid, 500).then(all => {
+        const totalQ = all.reduce((s, a) => s + a.nQuestions, 0);
+        const streak = (() => {
+          const days = new Set(all.map(a => new Date(a.createdAt).toDateString()));
+          let n = 0, d = new Date();
+          while (days.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
+          return n;
+        })();
+        const aiPaperCount = all.filter(a => a.topicId === "ai_paper").length;
+        checkAndAwardAchievements(user.uid, {
+          totalTests:   all.length,
+          totalQ,
+          streak,
+          maxAccuracy:  Math.max(...all.map(a => a.accuracy), 0),
+          avgSpeed:     attempt.speedSecPerQ,
+          aiPaper:      config.aiPaper,
+          aiPaperCount,
+        }).catch(() => {});
+      }).catch(() => {});
     }
 
     router.replace({
@@ -375,6 +449,8 @@ export default function TestScreen() {
               <Text style={{ color: theme.sub, fontSize: 18 }}>✕</Text>
             </TouchableOpacity>
           </View>
+          {/* Scrollable grid so Submit is always reachable */}
+          <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
           <FlatList
             data={questions}
             keyExtractor={(_, i) => String(i)}
@@ -429,8 +505,9 @@ export default function TestScreen() {
               </View>
             ))}
           </View>
+          </ScrollView>
 
-          {/* End Test — submit early, unanswered get 0 marks */}
+          {/* End Test — always visible, outside scroll */}
           <TouchableOpacity
             style={[s.endTestBtn, { backgroundColor: theme.green + "18", borderColor: theme.green }]}
             onPress={() => { setShowPalette(false); submitTest(false); }}
@@ -451,7 +528,17 @@ export default function TestScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Question card */}
+        {/* Section label for AI papers */}
+        {currentSectionLabel() && (
+          <View style={[s.sectionBanner, { backgroundColor: accentColor + "18", borderColor: accentColor + "40" }]}>
+            <Text style={{ color: accentColor, fontWeight: "800", fontSize: 12 }}>
+              📂 {currentSectionLabel()}
+            </Text>
+          </View>
+        )}
+
+        {/* Question card + options wrapped for slide animation */}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideX }] }}>
         <View style={[s.qCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           {/* Card top row: Q number + marks + bookmark */}
           <View style={s.qCardHeader}>
@@ -475,6 +562,10 @@ export default function TestScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Question images (pie charts, geometry, Venn diagrams) */}
+          {extractImages(q.question).map((url, i) => (
+            <QuestionImage key={i} uri={url} />
+          ))}
           {/* Question text */}
           <Text style={[s.qText, { color: theme.text }]}>{stripHtml(q.question)}</Text>
         </View>
@@ -543,6 +634,21 @@ export default function TestScreen() {
           })}
         </View>
 
+        {/* AI Concept button — always visible after answering, or tap anytime */}
+        <TouchableOpacity
+          onPress={() => setConceptVisible(true)}
+          style={[s.conceptBtn, {
+            backgroundColor: theme.primary + "15",
+            borderColor: theme.primary + "50",
+          }]}
+        >
+          <Text style={{ fontSize: 16 }}>🧠</Text>
+          <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 13 }}>
+            Understand this concept
+          </Text>
+        </TouchableOpacity>
+        </Animated.View>
+
         {/* Explanation */}
         {hasAnswer && q.explanation ? (
           <View style={[s.explain, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -568,7 +674,7 @@ export default function TestScreen() {
         <TouchableOpacity
           disabled={current === 0}
           style={[s.navSide, { opacity: current === 0 ? 0.35 : 1, backgroundColor: theme.bg2, borderColor: theme.border }]}
-          onPress={() => setCurrent(c => Math.max(0, c - 1))}
+          onPress={() => { if (current > 0) animateTo(-1, current - 1); }}
         >
           <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>‹</Text>
           <Text style={{ color: theme.sub, fontSize: 12, fontWeight: "600" }}>Prev</Text>
@@ -611,7 +717,7 @@ export default function TestScreen() {
         {current < questions.length - 1 && (
           <TouchableOpacity
             style={[s.navSide, { backgroundColor: accentColor, borderColor: accentColor }]}
-            onPress={() => setCurrent(c => c + 1)}
+            onPress={() => { if (current < questions.length - 1) animateTo(1, current + 1); }}
           >
             <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Next</Text>
             <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>›</Text>
@@ -620,6 +726,13 @@ export default function TestScreen() {
       </View>
 
       {/* ── Confirm sheets ────────────────────────────────────────────────────── */}
+      {/* AI Concept Modal */}
+      <ConceptModal
+        visible={conceptVisible}
+        question={questions[current] ?? null}
+        onClose={() => setConceptVisible(false)}
+      />
+
       <ConfirmSheet
         visible={leaveVisible}
         icon="🚪"
@@ -715,7 +828,7 @@ const s = StyleSheet.create({
     width: 36, height: 36, borderRadius: 10,
     alignItems: "center", justifyContent: "center",
   },
-  qText: { fontSize: 16, lineHeight: 26, fontWeight: "500", letterSpacing: 0.1 },
+  qText:  { fontSize: 16, lineHeight: 26, fontWeight: "500", letterSpacing: 0.1 },
 
   // Options
   option: {
@@ -735,6 +848,16 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
 
+  // Section banner (AI paper)
+  sectionBanner: {
+    borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7,
+    marginBottom: 10, flexDirection: "row",
+  },
+  // Concept button
+  conceptBtn: {
+    borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10,
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10,
+  },
   // Explanation
   explain: {
     borderRadius: 16, borderWidth: 1, padding: 16, marginTop: 6,

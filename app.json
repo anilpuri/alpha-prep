@@ -17,7 +17,8 @@
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "versionCode": 3
+      "versionCode": 4,
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "static",

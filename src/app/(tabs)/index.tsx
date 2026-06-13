@@ -155,8 +155,9 @@ export default function ReportCard() {
       .slice(0, 3);
   }, [topicStats]);
 
-  const bestTopic     = [...topicStats].sort((a, b) => b.accuracy - a.accuracy)[0] ?? null;
+  const bestTopic      = [...topicStats].sort((a, b) => b.accuracy - a.accuracy)[0] ?? null;
   const recentAttempts = attempts.slice(0, 5);
+
 
   // Tab indicator position
   const underlineLeft = tabAnim.interpolate({
@@ -189,6 +190,7 @@ export default function ReportCard() {
           </View>
         )}
       </View>
+
 
       {totalAttempts === 0 ? (
         <View style={s.empty}>

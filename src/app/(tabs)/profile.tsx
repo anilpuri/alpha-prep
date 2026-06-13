@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, FlatList,
 } from "react-native";
 import { Spinner } from "../../components/Spinner";
 import { useAuth } from "../../lib/auth-context";
 import { useTheme } from "../../lib/theme-context";
-import { fetchAttempts } from "../../lib/db";
+import { fetchAttempts, fetchAchievements } from "../../lib/db";
 import { THEME_META, type ThemeName, type ThemeGroup } from "../../lib/theme";
-import type { Attempt } from "../../lib/types";
+import { ACHIEVEMENTS } from "../../lib/types";
+import { GROQ_MODELS, type GroqModelId } from "../../lib/groq";
+import { loadSettings, getActiveModel, setActiveModel } from "../../lib/settings";
+import type { Attempt, UserAchievement } from "../../lib/types";
 
 const GROUPS: { group: ThemeGroup; label: string; emoji: string }[] = [
   { group: "default", label: "Default", emoji: "✦" },
@@ -18,14 +21,26 @@ const GROUPS: { group: ThemeGroup; label: string; emoji: string }[] = [
 export default function Profile() {
   const { user, logout }               = useAuth();
   const { theme, themeName, setTheme } = useTheme();
-  const [attempts, setAttempts]        = useState<Attempt[]>([]);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [attempts,      setAttempts]      = useState<Attempt[]>([]);
+  const [achievements,  setAchievements]  = useState<UserAchievement[]>([]);
+  const [loadingStats,  setLoadingStats]  = useState(true);
+  const [achModal,      setAchModal]      = useState(false);
+  const [selectedModel, setSelectedModel] = useState<GroqModelId>("llama-3.1-8b-instant");
+
+  useEffect(() => {
+    loadSettings().then(() => setSelectedModel(getActiveModel()));
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-    fetchAttempts(user.uid, 500)
-      .then(a => { setAttempts(a); setLoadingStats(false); })
-      .catch(() => setLoadingStats(false));
+    Promise.all([
+      fetchAttempts(user.uid, 500),
+      fetchAchievements(user.uid),
+    ]).then(([a, ach]) => {
+      setAttempts(a);
+      setAchievements(ach);
+      setLoadingStats(false);
+    }).catch(() => setLoadingStats(false));
   }, [user]);
 
   const onLogout = () => {
@@ -70,6 +85,75 @@ export default function Profile() {
             <StatBox label="Accuracy"   value={`${overallAcc}%`} color={theme.green} />
           </View>
         )}
+
+        {/* Achievements — compact row */}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+          <Text style={[s.sectionTitle, { color: theme.sub, flex: 1 }]}>ACHIEVEMENTS</Text>
+          <TouchableOpacity onPress={() => setAchModal(true)}>
+            <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+              {achievements.length}/{ACHIEVEMENTS.length} · View All →
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Single horizontal strip */}
+        <FlatList
+          data={ACHIEVEMENTS}
+          keyExtractor={a => a.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
+          renderItem={({ item: ach }) => {
+            const earned = achievements.some(a => a.id === ach.id);
+            return (
+              <View style={[s.achStrip, {
+                backgroundColor: earned ? theme.primary + "18" : theme.card,
+                borderColor:     earned ? theme.primary + "55" : theme.border,
+                opacity: earned ? 1 : 0.45,
+              }]}>
+                <Text style={{ fontSize: 22 }}>{ach.emoji}</Text>
+                {earned && (
+                  <View style={[s.achStripDot, { backgroundColor: theme.green }]} />
+                )}
+              </View>
+            );
+          }}
+        />
+
+        {/* View All Modal */}
+        <Modal visible={achModal} animationType="slide" transparent onRequestClose={() => setAchModal(false)}>
+          <View style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "flex-end" }}>
+            <View style={[s.achModalSheet, { backgroundColor: theme.bg }]}>
+              <View style={[s.achModalHandle, { backgroundColor: theme.border }]} />
+              <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 16 }}>
+                <Text style={{ flex: 1, fontSize: 18, fontWeight: "900", color: theme.text }}>
+                  Achievements
+                </Text>
+                <Text style={{ color: theme.primary, fontWeight: "700" }}>
+                  {achievements.length} / {ACHIEVEMENTS.length}
+                </Text>
+                <TouchableOpacity onPress={() => setAchModal(false)} style={{ marginLeft: 16 }}>
+                  <Text style={{ color: theme.sub, fontSize: 22 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
+                {/* Progress bar */}
+                <View style={[s.progBg, { backgroundColor: theme.border, marginBottom: 16 }]}>
+                  <View style={[s.progFill, {
+                    backgroundColor: theme.primary,
+                    width: `${Math.round((achievements.length / ACHIEVEMENTS.length) * 100)}%` as any,
+                  }]} />
+                </View>
+                <View style={s.badgeGrid}>
+                  {ACHIEVEMENTS.map(ach => {
+                    const ua = achievements.find(u => u.id === ach.id);
+                    return <BadgeCard key={ach.id} ach={ach} earned={!!ua} earnedAt={ua?.earnedAt} theme={theme} />;
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
 
         {/* Theme picker — 3 groups */}
         <Text style={[s.sectionTitle, { color: theme.sub }]}>THEME</Text>
@@ -124,6 +208,45 @@ export default function Profile() {
           })}
         </View>
 
+        {/* AI Model selector */}
+        <Text style={[s.sectionTitle, { color: theme.sub }]}>AI MODEL (GROQ)</Text>
+        <View style={[s.themeCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={{ fontSize: 12, color: theme.sub, marginBottom: 12, lineHeight: 18 }}>
+            Used for Daily Content, GK, Vocab and AI Readiness.{"\n"}
+            Concept Explainer always uses the 70B model.
+          </Text>
+          {(Object.entries(GROQ_MODELS) as [GroqModelId, { label: string; tpm: number }][]).map(([id, info]) => {
+            const active = selectedModel === id;
+            return (
+              <TouchableOpacity
+                key={id}
+                onPress={async () => {
+                  setSelectedModel(id);
+                  await setActiveModel(id);
+                }}
+                style={[s.modelRow, {
+                  backgroundColor: active ? theme.primary + "15" : theme.bg2,
+                  borderColor:     active ? theme.primary       : theme.border,
+                }]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: "800", fontSize: 13, color: active ? theme.primary : theme.text }}>
+                    {info.label}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.sub, marginTop: 2 }}>
+                    {(info.tpm / 1000).toFixed(0)}K TPM free · {id}
+                  </Text>
+                </View>
+                {active && (
+                  <View style={[s.modelCheck, { backgroundColor: theme.primary }]}>
+                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "900" }}>✓</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         {/* User info rows */}
         <Text style={[s.sectionTitle, { color: theme.sub }]}>ACCOUNT</Text>
         <Row icon="✅" label="Email verified" value={user?.emailVerified ? "Yes" : "No"} />
@@ -139,6 +262,45 @@ export default function Profile() {
       </View>
       <View style={{ height: 40 }} />
     </ScrollView>
+  );
+}
+
+function BadgeCard({
+  ach, earned, earnedAt, theme,
+}: { ach: { emoji: string; title: string; desc: string; id: string }; earned: boolean; earnedAt?: number; theme: any }) {
+  return (
+    <View style={[
+      s.badgeCard,
+      {
+        backgroundColor: earned ? theme.primary + "15" : theme.card,
+        borderColor:     earned ? theme.primary + "55" : theme.border,
+      },
+    ]}>
+      <View style={[s.badgeCircle, { backgroundColor: earned ? theme.primary + "25" : theme.bg2 }]}>
+        <Text style={[s.badgeEmoji, { opacity: earned ? 1 : 0.3 }]}>{ach.emoji}</Text>
+        {!earned && (
+          <View style={s.lockBadge}>
+            <Text style={{ fontSize: 9 }}>🔒</Text>
+          </View>
+        )}
+        {earned && (
+          <View style={[s.earnedBadge, { backgroundColor: theme.green }]}>
+            <Text style={{ fontSize: 8, color: "#fff", fontWeight: "900" }}>✓</Text>
+          </View>
+        )}
+      </View>
+      <Text style={{ fontSize: 11, fontWeight: "900", color: earned ? theme.text : theme.muted, textAlign: "center", marginTop: 8 }} numberOfLines={1}>
+        {ach.title}
+      </Text>
+      <Text style={{ fontSize: 10, color: earned ? theme.sub : theme.muted, textAlign: "center", marginTop: 3, lineHeight: 13 }} numberOfLines={2}>
+        {ach.desc}
+      </Text>
+      {earned && earnedAt ? (
+        <Text style={{ fontSize: 9, color: theme.primary, fontWeight: "800", marginTop: 5 }}>
+          EARNED
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -186,6 +348,49 @@ const s = StyleSheet.create({
   },
   logoutBtn:  { borderRadius: 14, padding: 16, alignItems: "center", marginTop: 8 },
   logoutText: { fontSize: 16, fontWeight: "800" },
+  modelRow:   { borderRadius: 14, borderWidth: 1.5, padding: 12, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  modelCheck: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+
+  // Achievements
+  achProgress: { borderRadius: 18, borderWidth: 1, padding: 18, flexDirection: "row", alignItems: "center" },
+  progBg:      { height: 6, borderRadius: 3, overflow: "hidden" },
+  progFill:    { height: 6, borderRadius: 3 },
+  achSubHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16, marginBottom: 10 },
+  achDot:      { width: 6, height: 6, borderRadius: 3 },
+  achSubLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
+  badgeGrid:   { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  achStrip:    {
+    width: 52, height: 52, borderRadius: 14, borderWidth: 1.5,
+    alignItems: "center", justifyContent: "center",
+  },
+  achStripDot: {
+    position: "absolute", top: 4, right: 4,
+    width: 8, height: 8, borderRadius: 4,
+  },
+  achModalSheet: {
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    maxHeight: "88%", paddingTop: 12,
+  },
+  achModalHandle: {
+    width: 44, height: 5, borderRadius: 3,
+    alignSelf: "center", marginBottom: 16,
+  },
+  badgeCard:   {
+    width: "47%", borderRadius: 16, borderWidth: 1.5,
+    padding: 14, alignItems: "center",
+  },
+  badgeCircle: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
+  badgeEmoji:  { fontSize: 26 },
+  lockBadge:   {
+    position: "absolute", bottom: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: "#33333388", alignItems: "center", justifyContent: "center",
+  },
+  earnedBadge: {
+    position: "absolute", bottom: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9,
+    alignItems: "center", justifyContent: "center",
+  },
 });
 
 const styles = StyleSheet.create({

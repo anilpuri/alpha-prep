@@ -13,6 +13,7 @@ import { subjectAccent, accuracyColor, pctStr } from "../lib/theme";
 import { formatDuration } from "../lib/timer";
 import { stripHtml, extractImages } from "../lib/utils";
 import { QuestionImage } from "../components/QuestionImage";
+import { MathRenderer } from "../components/MathRenderer";
 import type { Attempt, Question } from "../lib/types";
 
 type Review = "all" | "wrong" | "correct" | "skipped";
@@ -108,12 +109,14 @@ export default function ResultScreen() {
             borderColor: accColor, shadowColor: accColor, shadowOpacity: 0.3,
             shadowRadius: 16, elevation: 8,
           }]}>
-            <Text style={[s.scorePctText, { color: accColor }]}>{Math.round(scorePct)}%</Text>
+            <Text style={[s.scorePctText, { color: accColor }]}>{Math.max(0, Math.round(scorePct))}%</Text>
             <Text style={{ fontSize: 12, color: theme.sub, fontWeight: "600" }}>score</Text>
           </View>
           <Text style={{ fontSize: 36, fontWeight: "900", color: accentColor, marginTop: 16 }}>
-            {displayScore.toFixed(1)}
-            <Text style={{ fontSize: 18, color: theme.sub }}>/{attempt.maxScore}</Text>
+            {displayScore % 1 === 0 ? displayScore.toFixed(0) : displayScore.toFixed(1)}
+            <Text style={{ fontSize: 18, color: theme.sub }}>
+              /{attempt.maxScore % 1 === 0 ? attempt.maxScore : attempt.maxScore.toFixed(1)}
+            </Text>
           </Text>
           <Text style={{ fontSize: 13, color: theme.sub, marginTop: 4 }}>
             Accuracy: <Text style={{ fontWeight: "800", color: accColor }}>{pctStr(attempt.accuracy, 0)}</Text>
@@ -168,7 +171,7 @@ export default function ResultScreen() {
           <Text style={{ color: theme.sub, fontSize: 12, fontWeight: "700" }}>MARKING SCHEME</Text>
           <View style={{ flexDirection: "row", marginTop: 8, gap: 16 }}>
             <Text style={{ color: theme.green, fontWeight: "700" }}>
-              ✓ +{questions[0]?.marks?.positive ?? attempt.score > 0 ? 2 : 2} per correct
+              ✓ +{questions[0]?.marks?.positive ?? 2} per correct
             </Text>
             <Text style={{ color: theme.red, fontWeight: "700" }}>
               ✗ −{questions[0]?.marks?.negative ?? 0.5} per wrong
@@ -225,32 +228,42 @@ export default function ResultScreen() {
                       {r?.correct ? "✅ Correct" : r?.selected === null ? "⏭ Skipped" : "❌ Wrong"}
                       <Text style={{ color: theme.muted }}>  ·  Q{ri + 1}</Text>
                     </Text>
-                    {isExpanded && extractImages(q.question).map((url, i) => (
+                    {isExpanded && !q.is_math && extractImages(q.question).map((url, i) => (
                       <QuestionImage key={i} uri={url} />
                     ))}
-                    <Text
-                      style={{ color: theme.text, fontWeight: "600", marginTop: 4, lineHeight: 20 }}
-                      numberOfLines={isExpanded ? undefined : 2}
-                    >
-                      {stripHtml(q.question)}
-                    </Text>
+                    {q.is_math && isExpanded
+                      ? <MathRenderer html={q.question} textColor={theme.text} fontSize={14} backgroundColor={theme.card} containerStyle={{ marginTop: 4 }} />
+                      : <Text
+                          style={{ color: theme.text, fontWeight: "600", marginTop: 4, lineHeight: 20 }}
+                          numberOfLines={isExpanded ? undefined : 2}
+                        >
+                          {stripHtml(q.question)}
+                        </Text>
+                    }
                     {isExpanded && (
                       <>
                         <View style={{ marginTop: 12, gap: 6 }}>
                           {q.options.map(opt => {
                             const isCorrect  = q.answer.includes(opt.id);
                             const isSelected = r?.selected === opt.id;
+                            const optBg = isCorrect ? theme.greenLt : isSelected && !isCorrect ? theme.redLt : theme.bg2;
+                            const optTextColor = theme.text;
+                            const optHasMath = /\\\(|\\\[|\$/.test(opt.value);
+                            const optHasImg  = /<img/i.test(opt.value);
                             return (
                               <View key={opt.id} style={[s.reviewOpt, {
-                                backgroundColor: isCorrect ? theme.greenLt : isSelected && !isCorrect ? theme.redLt : theme.bg2,
+                                backgroundColor: optBg,
                                 borderColor: isCorrect ? theme.green : isSelected ? theme.red : theme.border,
                               }]}>
                                 <Text style={{ fontSize: 12, fontWeight: "700", color: theme.sub, marginRight: 8 }}>
                                   {String.fromCharCode(65 + opt.id)}
                                 </Text>
-                                <Text style={{ flex: 1, fontSize: 13, color: theme.text, lineHeight: 18 }}>
-                                  {stripHtml(opt.value)}
-                                </Text>
+                                {optHasMath || optHasImg
+                                  ? <MathRenderer html={opt.value} textColor={optTextColor} fontSize={13} backgroundColor={optBg} containerStyle={{ flex: 1 }} />
+                                  : <Text style={{ flex: 1, fontSize: 13, color: optTextColor, lineHeight: 18 }}>
+                                      {stripHtml(opt.value)}
+                                    </Text>
+                                }
                                 {isCorrect   && <Text style={{ color: theme.green, fontSize: 16 }}>✓</Text>}
                                 {isSelected && !isCorrect && <Text style={{ color: theme.red, fontSize: 16 }}>✗</Text>}
                               </View>
@@ -260,9 +273,12 @@ export default function ResultScreen() {
                         {q.explanation ? (
                           <View style={[s.explain, { backgroundColor: theme.blueLt, borderColor: theme.blue }]}>
                             <Text style={{ color: theme.blue, fontWeight: "800", marginBottom: 4 }}>💡 Explanation</Text>
-                            <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
-                              {stripHtml(q.explanation)}
-                            </Text>
+                            {/\\\(|\\\[|\$/.test(q.explanation)
+                              ? <MathRenderer html={q.explanation} textColor={theme.text} fontSize={13} backgroundColor={theme.blueLt} />
+                              : <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+                                  {stripHtml(q.explanation)}
+                                </Text>
+                            }
                           </View>
                         ) : null}
                         {/* AI Concept button */}

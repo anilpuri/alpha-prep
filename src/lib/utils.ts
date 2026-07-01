@@ -18,16 +18,76 @@ export function extractImages(html: string): string[] {
 
 /**
  * HTML → plain text for question/option rendering.
- * Handles math symbols, tables, fractions, superscripts, subscripts, and
- * all common HTML entities found in SSC CGL question banks.
+ * Handles math symbols, tables, fractions, superscripts, subscripts, LaTeX,
+ * and all common HTML entities found in SSC CGL question banks.
  */
 export function stripHtml(html: string): string {
   if (!html) return "";
 
   let t = html;
 
+  // ── Superscript / subscript maps (shared with LaTeX processing below) ────────
+  const supMap: Record<string, string> = {
+    "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
+    "+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾","n":"ⁿ","a":"ᵃ","b":"ᵇ","c":"ᶜ","x":"ˣ",
+  };
+  const subMap: Record<string, string> = {
+    "0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉",
+  };
+
+  // ── LaTeX math → readable plain text ─────────────────────────────────────────
+  // Converts \( ... \) and \[ ... \] blocks to readable Unicode text.
+  const latexToText = (m: string): string => {
+    let s = m;
+    // \frac{num}{den} — nested, so loop until stable
+    let prev = "";
+    while (prev !== s) {
+      prev = s;
+      s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "($1/$2)");
+    }
+    // {num} \over {den}  — LaTeX \over syntax
+    s = s.replace(/\{([^{}]*)\}\s*\\over\s*\{([^{}]*)\}/g, "($1/$2)");
+    s = s.replace(/([^{}\s\\]+)\s*\\over\s*([^{}\s\\]+)/g, "($1/$2)");
+    // \sqrt{a} → √a
+    s = s.replace(/\\sqrt\{([^{}]*)\}/g, "√($1)").replace(/\\sqrt\b/g, "√");
+    // Superscripts ^{...} and ^x
+    s = s.replace(/\^\{([^{}]*)\}/g, (_, c) => c.split("").map((ch: string) => supMap[ch] ?? ch).join(""));
+    s = s.replace(/\^([0-9a-zA-Z])/g, (_, c) => supMap[c] ?? c);
+    // Subscripts _{...} and _x
+    s = s.replace(/_\{([^{}]*)\}/g, (_, c) => c.split("").map((ch: string) => subMap[ch] ?? ch).join(""));
+    s = s.replace(/_([0-9])/g, (_, c) => subMap[c] ?? c);
+    // \text{...}, \mathrm{...}, \mathbf{...} — keep the inner text
+    s = s.replace(/\\(?:text|mathrm|mathbf|mathit|mathcal)\{([^{}]*)\}/g, "$1");
+    // Common symbols
+    s = s.replace(/\\times/g, "×").replace(/\\div/g, "÷").replace(/\\pm/g, "±")
+         .replace(/\\mp/g, "∓").replace(/\\cdot/g, "·").replace(/\\ldots|\\dots/g, "…")
+         .replace(/\\infty/g, "∞").replace(/\\pi/g, "π").replace(/\\theta/g, "θ")
+         .replace(/\\alpha/g, "α").replace(/\\beta/g, "β").replace(/\\gamma/g, "γ")
+         .replace(/\\delta/g, "δ").replace(/\\sigma/g, "σ").replace(/\\mu/g, "μ")
+         .replace(/\\leq/g, "≤").replace(/\\geq/g, "≥").replace(/\\neq/g, "≠")
+         .replace(/\\le\b/g, "≤").replace(/\\ge\b/g, "≥").replace(/\\ne\b/g, "≠")
+         .replace(/\\approx/g, "≈").replace(/\\equiv/g, "≡").replace(/\\propto/g, "∝")
+         .replace(/\\quad|\\qquad/g, " ").replace(/\\,|\\;|\\!/g, "")
+         .replace(/\\left|\\right/g, "").replace(/\\big[lr]?[({[|)]*/g, "");
+    // Mixed number cleanup: 7(1/2) → 7 1/2
+    s = s.replace(/(\d)\((\d+)\/(\d+)\)/g, "$1 $2/$3");
+    // Remove remaining LaTeX commands and braces
+    s = s.replace(/\\[a-zA-Z]+\*/g, "").replace(/\\[a-zA-Z]+/g, "");
+    s = s.replace(/[{}]/g, "").replace(/\\ /g, " ").replace(/\\\\/g, "");
+    return s.replace(/\s+/g, " ").trim();
+  };
+
+  // Apply LaTeX processing before HTML stripping
+  t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToText(m));
+  t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToText(m));
+  // Also handle $...$  (single-dollar inline math — skip if just a price like $5)
+  t = t.replace(/\$([^$\n]{1,80}?)\$/g, (_, m) => {
+    // Only convert if it looks like math (contains \ or ^ or _ or \frac etc.)
+    if (/[\\^_]|\\frac|\\over/.test(m)) return latexToText(m);
+    return `$${m}$`;
+  });
+
   // ── Table → structured plain text ───────────────────────────────────────────
-  // Convert <tr> rows to newline-separated values, <td>/<th> to tab-separated
   t = t.replace(/<tr[^>]*>/gi, "\n");
   t = t.replace(/<\/tr>/gi, "");
   t = t.replace(/<t[dh][^>]*>/gi, "  ");
@@ -35,14 +95,7 @@ export function stripHtml(html: string): string {
   t = t.replace(/<\/table>/gi, "\n");
   t = t.replace(/<table[^>]*>/gi, "\n");
 
-  // ── Superscript / subscript → unicode-ish ───────────────────────────────────
-  const supMap: Record<string, string> = {
-    "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
-    "+":"⁺","-":"⁻","=":"⁼","(":"⁽",")":"⁾","n":"ⁿ","a":"ᵃ","b":"ᵇ","c":"ᶜ",
-  };
-  const subMap: Record<string, string> = {
-    "0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉",
-  };
+  // ── Superscript / subscript HTML tags → unicode ──────────────────────────────
   t = t.replace(/<sup[^>]*>([\s\S]*?)<\/sup>/gi, (_, inner) => {
     const text = stripHtml(inner);
     return text.split("").map(c => supMap[c] ?? c).join("");
@@ -52,7 +105,7 @@ export function stripHtml(html: string): string {
     return text.split("").map(c => subMap[c] ?? c).join("");
   });
 
-  // ── Fraction markup ──────────────────────────────────────────────────────────
+  // ── HTML fraction markup ─────────────────────────────────────────────────────
   // <span class="frac"><sup>num</sup><sub>den</sub></span> style
   t = t.replace(/<span[^>]*frac[^>]*>\s*<sup[^>]*>(.*?)<\/sup>\s*<sub[^>]*>(.*?)<\/sub>\s*<\/span>/gi,
     (_, n, d) => `${stripHtml(n)}/${stripHtml(d)}`);

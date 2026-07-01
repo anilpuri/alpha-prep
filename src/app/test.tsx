@@ -19,6 +19,7 @@ import { allowedTimeSec, formatTime } from "../lib/timer";
 import { subjectAccent, subjectEmoji } from "../lib/theme";
 import { stripHtml, extractImages } from "../lib/utils";
 import { QuestionImage } from "../components/QuestionImage";
+import { MathRenderer } from "../components/MathRenderer";
 import { checkAndAwardAchievements, fetchAttempts } from "../lib/db";
 import type { TestConfig, Question, Attempt, PerQuestionResult } from "../lib/types";
 
@@ -259,10 +260,16 @@ export default function TestScreen() {
     const correct  = perQuestion.filter(r => r.correct).length;
     const wrong    = perQuestion.filter(r => !r.correct && r.selected !== null).length;
     const skipped  = perQuestion.filter(r => r.selected === null).length;
-    const posM     = questions[0]?.marks?.positive ?? 2;
-    const negM     = questions[0]?.marks?.negative ?? 0.5;
-    const score    = correct * posM - wrong * negM;
-    const maxScore = questions.length * posM;
+    // Per-question scoring — each question may have different marks
+    let score = 0, maxScore = 0;
+    questions.forEach((q, i) => {
+      const posM = q.marks?.positive ?? 2;
+      const negM = q.marks?.negative ?? 0.5;
+      maxScore += posM;
+      const r = perQuestion[i];
+      if (r.correct) score += posM;
+      else if (r.selected !== null) score -= negM;
+    });
     const answered = correct + wrong;
     const accuracy = answered > 0 ? (correct / answered) * 100 : 0;
     const speed    = questions.length > 0 ? elapsed / questions.length : 0;
@@ -358,7 +365,8 @@ export default function TestScreen() {
   const hasAnswer    = selected[current] !== null;
   const answeredCount = selected.filter(s => s !== null).length;
   const scoreColor   = runningScore >= 0 ? "#4ADE80" : "#F87171";
-  const scoreStr     = runningScore >= 0 ? `+${runningScore.toFixed(1)}` : `${runningScore.toFixed(1)}`;
+  const fmtNum = (n: number) => n % 1 === 0 ? n.toFixed(0) : n.toFixed(1);
+  const scoreStr     = runningScore >= 0 ? `+${fmtNum(runningScore)}` : fmtNum(runningScore);
   const isBookmarked = localBookmarks.has(q.qid);
   const posM         = q.marks?.positive ?? 2;
   const negM         = q.marks?.negative ?? 0.5;
@@ -562,12 +570,15 @@ export default function TestScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Question images (pie charts, geometry, Venn diagrams) */}
-          {extractImages(q.question).map((url, i) => (
+          {/* Question images — skip for is_math since MathRenderer renders them inline */}
+          {!q.is_math && extractImages(q.question).map((url, i) => (
             <QuestionImage key={i} uri={url} />
           ))}
-          {/* Question text */}
-          <Text style={[s.qText, { color: theme.text }]}>{stripHtml(q.question)}</Text>
+          {/* Question text — math questions use KaTeX WebView renderer */}
+          {q.is_math
+            ? <MathRenderer html={q.question} textColor={theme.text} fontSize={15} backgroundColor={theme.card} />
+            : <Text style={[s.qText, { color: theme.text }]}>{stripHtml(q.question)}</Text>
+          }
         </View>
 
         {/* Options */}
@@ -584,7 +595,6 @@ export default function TestScreen() {
             let textColor   = theme.text;
 
             if (!hasAnswer && isSel) {
-              // pre-answer selected (shouldn't happen since we lock immediately, but just in case)
               bg = accentColor + "15"; borderColor = accentColor;
               letterBg = accentColor; letterColor = "#fff";
             }
@@ -597,9 +607,11 @@ export default function TestScreen() {
               letterBg = theme.red; letterColor = "#fff"; textColor = theme.text;
             }
             if (hasAnswer && !isCorrect && !isSel) {
-              // dim other wrong options after answer
               textColor = theme.muted;
             }
+
+            const optHasMath = /\\\(|\\\[|\$/.test(opt.value);
+            const optHasImg  = /<img/i.test(opt.value);
 
             return (
               <TouchableOpacity
@@ -613,10 +625,11 @@ export default function TestScreen() {
                   <Text style={{ fontSize: 13, fontWeight: "900", color: letterColor }}>{letter}</Text>
                 </View>
 
-                {/* Option text */}
-                <Text style={[s.optText, { color: textColor }]} numberOfLines={6}>
-                  {stripHtml(opt.value)}
-                </Text>
+                {/* Option text — use WebView for math or image options */}
+                {optHasMath || optHasImg
+                  ? <MathRenderer html={opt.value} textColor={textColor} fontSize={14} backgroundColor={bg} containerStyle={{ flex: 1 }} />
+                  : <Text style={[s.optText, { color: textColor }]} numberOfLines={6}>{stripHtml(opt.value)}</Text>
+                }
 
                 {/* Result icon */}
                 {hasAnswer && isCorrect && (
@@ -660,9 +673,10 @@ export default function TestScreen() {
                   EXPLANATION
                 </Text>
               </View>
-              <Text style={{ color: theme.text, lineHeight: 23, fontSize: 14 }}>
-                {stripHtml(q.explanation)}
-              </Text>
+              {/\\\(|\\\[|\$/.test(q.explanation)
+                ? <MathRenderer html={q.explanation} textColor={theme.text} fontSize={14} backgroundColor={theme.card} />
+                : <Text style={{ color: theme.text, lineHeight: 23, fontSize: 14 }}>{stripHtml(q.explanation)}</Text>
+              }
             </View>
           </View>
         ) : null}

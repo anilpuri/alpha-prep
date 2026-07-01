@@ -1,13 +1,14 @@
 {
   "name": "alpha-prep",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.1.2",
     "@react-native-community/slider": "5.2.0",
     "expo": "~56.0.11",
     "expo-auth-session": "~56.0.14",
+    "expo-build-properties": "~56.0.18",
     "expo-constants": "~56.0.18",
     "expo-crypto": "~56.0.4",
     "expo-device": "~56.0.4",
@@ -29,6 +30,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-web": "~0.21.0",
+    "react-native-webview": "13.16.1",
     "react-native-worklets": "0.8.3"
   },
   "devDependencies": {

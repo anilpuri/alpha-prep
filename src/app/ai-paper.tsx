@@ -301,7 +301,7 @@ export default function AiPaperScreen() {
         <View style={[s.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={[s.sectionLabel, { color: theme.sub }]}>QUESTIONS PER SUBJECT</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
-            {[10, 15, 20, 25].map(n => (
+            {[5, 10, 15, 20, 25, 30, 50].map(n => (
               <TouchableOpacity
                 key={n}
                 onPress={() => setQPerSubject(n)}

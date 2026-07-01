@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, FlatList,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, FlatList, TextInput,
 } from "react-native";
 import { Spinner } from "../../components/Spinner";
 import { useAuth } from "../../lib/auth-context";
 import { useTheme } from "../../lib/theme-context";
 import { fetchAttempts, fetchAchievements } from "../../lib/db";
 import { THEME_META, type ThemeName, type ThemeGroup } from "../../lib/theme";
-import { ACHIEVEMENTS } from "../../lib/types";
+import { ACHIEVEMENTS, SUBJECT_COLORS } from "../../lib/types";
 import { GROQ_MODELS, type GroqModelId } from "../../lib/groq";
-import { loadSettings, getActiveModel, setActiveModel } from "../../lib/settings";
-import type { Attempt, UserAchievement } from "../../lib/types";
+import {
+  loadSettings, getActiveModel, setActiveModel,
+  loadStudySettings, getStudyTargets, getStudySources,
+  saveStudyTargets, saveStudySources, DEFAULT_SOURCES, DEFAULT_TARGETS,
+} from "../../lib/settings";
+import type { Attempt, UserAchievement, SubjectTarget, StudySource } from "../../lib/types";
 
 const GROUPS: { group: ThemeGroup; label: string; emoji: string }[] = [
   { group: "default", label: "Default", emoji: "✦" },
@@ -25,10 +29,22 @@ export default function Profile() {
   const [achievements,  setAchievements]  = useState<UserAchievement[]>([]);
   const [loadingStats,  setLoadingStats]  = useState(true);
   const [achModal,      setAchModal]      = useState(false);
-  const [selectedModel, setSelectedModel] = useState<GroqModelId>("llama-3.1-8b-instant");
+  const [selectedModel, setSelectedModel] = useState<GroqModelId>("meta-llama/llama-4-scout-17b-16e-instruct");
+
+  // Study targets & sources
+  const [targets,      setTargets]      = useState<SubjectTarget[]>(DEFAULT_TARGETS.map(t => ({ ...t })));
+  const [sources,      setSources]      = useState<StudySource[]>(DEFAULT_SOURCES.map(s => ({ ...s })));
+  const [editTarget,   setEditTarget]   = useState<SubjectTarget | null>(null);
+  const [editMin,      setEditMin]      = useState("");
+  const [editMcqs,     setEditMcqs]     = useState("");
+  const [newSrcLabel,  setNewSrcLabel]  = useState("");
 
   useEffect(() => {
     loadSettings().then(() => setSelectedModel(getActiveModel()));
+    loadStudySettings().then(() => {
+      setTargets(getStudyTargets().map(t => ({ ...t })));
+      setSources(getStudySources().map(s => ({ ...s })));
+    });
   }, []);
 
   useEffect(() => {
@@ -57,6 +73,7 @@ export default function Profile() {
   const overallAcc     = totalAnswered > 0 ? ((totalCorrect / totalAnswered) * 100).toFixed(1) : "—";
 
   return (
+    <>
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }}>
       {/* Avatar / user info */}
       <View style={[s.header, { backgroundColor: theme.primary + "18" }]}>
@@ -247,6 +264,114 @@ export default function Profile() {
           })}
         </View>
 
+        {/* ── Study Targets ───────────────────────────────────────────────── */}
+        <Text style={[s.sectionTitle, { color: theme.sub }]}>DAILY STUDY TARGETS</Text>
+        <View style={[s.themeCard, { backgroundColor: theme.card, borderColor: theme.border, gap: 12 }]}>
+          <Text style={{ fontSize: 12, color: theme.sub, lineHeight: 18 }}>
+            Set daily goals per subject. Used to track your progress in Study Analytics.
+          </Text>
+          {targets.map(t => {
+            const col = SUBJECT_COLORS[t.subject] ?? theme.primary;
+            return (
+              <TouchableOpacity
+                key={t.subject}
+                onPress={() => { setEditTarget(t); setEditMin(String(t.dailyMinutes)); setEditMcqs(String(t.dailyMcqs)); }}
+                style={[s.targetRow, { borderColor: theme.border, backgroundColor: theme.bg2 }]}
+                activeOpacity={0.8}
+              >
+                <View style={[s.subjectDot, { backgroundColor: col }]} />
+                <Text style={{ flex: 1, fontSize: 13, fontWeight: "700", color: theme.text }}>{t.subject}</Text>
+                <Text style={{ fontSize: 12, color: theme.sub }}>{t.dailyMinutes}m · {t.dailyMcqs} MCQs</Text>
+                <Text style={{ color: theme.muted, marginLeft: 8 }}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── Study Sources ───────────────────────────────────────────────── */}
+        <Text style={[s.sectionTitle, { color: theme.sub }]}>STUDY SOURCES</Text>
+        <View style={[s.themeCard, { backgroundColor: theme.card, borderColor: theme.border, gap: 10 }]}>
+          <Text style={{ fontSize: 12, color: theme.sub, lineHeight: 18, marginBottom: 4 }}>
+            Toggle which sources appear when logging sessions. Swipe or tap ✕ to delete.
+          </Text>
+          {sources.map(src => (
+            <View
+              key={src.id}
+              style={[s.sourceRow, {
+                backgroundColor: src.enabled ? theme.primary + "12" : theme.bg2,
+                borderColor: src.enabled ? theme.primary + "50" : theme.border,
+              }]}
+            >
+              <TouchableOpacity
+                onPress={async () => {
+                  const updated = sources.map(s => s.id === src.id ? { ...s, enabled: !s.enabled } : s);
+                  setSources(updated);
+                  await saveStudySources(updated);
+                }}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ flex: 1, fontSize: 13, fontWeight: "700", color: src.enabled ? theme.primary : theme.sub }}>
+                  {src.label}
+                </Text>
+                <View style={[s.togglePill, { backgroundColor: src.enabled ? theme.primary : theme.border }]}>
+                  <View style={[s.toggleKnob, { alignSelf: src.enabled ? "flex-end" : "flex-start" }]} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert("Delete Source", `Delete "${src.label}"?`, [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Delete", style: "destructive", onPress: async () => {
+                        const updated = sources.filter(s => s.id !== src.id);
+                        setSources(updated);
+                        await saveStudySources(updated);
+                      },
+                    },
+                  ])
+                }
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10 }}
+              >
+                <Text style={{ color: theme.muted, fontSize: 16 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {/* Add new source */}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+            <TextInput
+              style={[s.editInput, { flex: 1, color: theme.text, borderColor: theme.border, backgroundColor: theme.bg2, marginBottom: 0, paddingVertical: 9, fontSize: 13 }]}
+              placeholder="New source name…"
+              placeholderTextColor={theme.muted}
+              value={newSrcLabel}
+              onChangeText={setNewSrcLabel}
+              returnKeyType="done"
+              onSubmitEditing={async () => {
+                const label = newSrcLabel.trim();
+                if (!label) return;
+                const updated = [...sources, { id: Date.now().toString(), label, enabled: true }];
+                setSources(updated);
+                await saveStudySources(updated);
+                setNewSrcLabel("");
+              }}
+            />
+            <TouchableOpacity
+              style={{ backgroundColor: theme.primary, borderRadius: 10, paddingHorizontal: 16, justifyContent: "center" }}
+              onPress={async () => {
+                const label = newSrcLabel.trim();
+                if (!label) return;
+                const updated = [...sources, { id: Date.now().toString(), label, enabled: true }];
+                setSources(updated);
+                await saveStudySources(updated);
+                setNewSrcLabel("");
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "900", fontSize: 15 }}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* User info rows */}
         <Text style={[s.sectionTitle, { color: theme.sub }]}>ACCOUNT</Text>
         <Row icon="✅" label="Email verified" value={user?.emailVerified ? "Yes" : "No"} />
@@ -262,6 +387,91 @@ export default function Profile() {
       </View>
       <View style={{ height: 40 }} />
     </ScrollView>
+
+    {/* Edit Target Modal */}
+    {editTarget != null && (
+      <Modal visible animationType="slide" transparent onRequestClose={() => setEditTarget(null)}>
+        <View style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "flex-end" }}>
+          <View style={[s.achModalSheet, { backgroundColor: theme.bg, paddingHorizontal: 20, paddingBottom: 40 }]}>
+            <View style={[s.achModalHandle, { backgroundColor: theme.border }]} />
+            <Text style={{ fontSize: 18, fontWeight: "900", color: theme.text, marginBottom: 20 }}>
+              {editTarget.subject} Target
+            </Text>
+
+            <Text style={{ fontSize: 11, fontWeight: "800", color: theme.sub, marginBottom: 8, letterSpacing: 0.5 }}>
+              DAILY STUDY TIME (MINUTES)
+            </Text>
+            <TextInput
+              style={[s.editInput, { backgroundColor: theme.bg2, borderColor: theme.border, color: theme.text }]}
+              keyboardType="number-pad"
+              value={editMin}
+              onChangeText={setEditMin}
+              placeholder="60"
+              placeholderTextColor={theme.muted}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 20 }}>
+              {[15, 30, 45, 60, 90, 120].map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[s.quickChip, { backgroundColor: editMin === String(m) ? theme.primary : theme.bg2, borderColor: theme.border }]}
+                  onPress={() => setEditMin(String(m))}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: editMin === String(m) ? "#fff" : theme.sub }}>{m}m</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: "800", color: theme.sub, marginBottom: 8, letterSpacing: 0.5 }}>
+              DAILY MCQs TARGET
+            </Text>
+            <TextInput
+              style={[s.editInput, { backgroundColor: theme.bg2, borderColor: theme.border, color: theme.text }]}
+              keyboardType="number-pad"
+              value={editMcqs}
+              onChangeText={setEditMcqs}
+              placeholder="20"
+              placeholderTextColor={theme.muted}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 24 }}>
+              {[10, 20, 25, 30, 50].map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[s.quickChip, { backgroundColor: editMcqs === String(m) ? theme.primary : theme.bg2, borderColor: theme.border }]}
+                  onPress={() => setEditMcqs(String(m))}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: editMcqs === String(m) ? "#fff" : theme.sub }}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[s.logoutBtn, { backgroundColor: theme.primary, marginTop: 0 }]}
+              onPress={async () => {
+                if (!editTarget) return;
+                const mins = parseInt(editMin, 10);
+                const mcqsV = parseInt(editMcqs, 10);
+                if (!mins || mins <= 0) { Alert.alert("Enter valid minutes"); return; }
+                const updated = targets.map(t =>
+                  t.subject === editTarget.subject
+                    ? { ...t, dailyMinutes: mins, dailyMcqs: mcqsV || 0 }
+                    : t
+                );
+                setTargets(updated);
+                await saveStudyTargets(updated);
+                setEditTarget(null);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: "#fff", fontWeight: "900", fontSize: 15 }}>Save Target</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ alignItems: "center", marginTop: 14 }} onPress={() => setEditTarget(null)}>
+              <Text style={{ color: theme.sub, fontSize: 14 }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -391,6 +601,15 @@ const s = StyleSheet.create({
     width: 18, height: 18, borderRadius: 9,
     alignItems: "center", justifyContent: "center",
   },
+
+  // Study targets & sources
+  subjectDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
+  targetRow:  { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, padding: 12 },
+  sourceRow:  { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, padding: 12 },
+  togglePill: { width: 36, height: 20, borderRadius: 10, padding: 2, justifyContent: "center" },
+  toggleKnob: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff" },
+  editInput:  { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 10 },
+  quickChip:  { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, alignItems: "center" },
 });
 
 const styles = StyleSheet.create({

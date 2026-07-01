@@ -163,6 +163,48 @@ export const ACHIEVEMENTS = [
 
 export type AchievementId = (typeof ACHIEVEMENTS)[number]["id"];
 
+// ── Study Analytics ───────────────────────────────────────────────────────────
+
+export const STUDY_SUBJECTS = [
+  "Maths", "Reasoning", "English", "General Knowledge", "Computer Knowledge",
+] as const;
+export type StudySubject = typeof STUDY_SUBJECTS[number];
+
+export const SUBJECT_COLORS: Record<StudySubject, string> = {
+  "Maths":               "#6C63FF",
+  "Reasoning":           "#F59E0B",
+  "English":             "#10B981",
+  "General Knowledge":   "#EF4444",
+  "Computer Knowledge":  "#3B82F6",
+};
+
+export interface StudySource {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface SubjectTarget {
+  subject: StudySubject;
+  dailyMinutes: number;
+  dailyMcqs: number;
+}
+
+export interface StudySession {
+  id: string;
+  subject: StudySubject;
+  sourceId: string;
+  durationMin: number;
+  mcqs: number;
+  timestamp: number;
+}
+
+export interface StudyLog {
+  date: string;         // "YYYY-MM-DD"
+  sessions: StudySession[];
+  updatedAt: number;
+}
+
 export interface PerQuestionResult {
   qid: number;
   selected: number | null;  // option id chosen, null = skipped

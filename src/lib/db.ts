@@ -6,7 +6,7 @@ import {
   getCountFromServer, where, limit as qLimit, deleteDoc, updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Tree, Question, Attempt, TopicStats, QuestionPool, DailyContent, UserAchievement } from "./types";
+import type { Tree, Question, Attempt, TopicStats, QuestionPool, DailyContent, UserAchievement, StudyLog } from "./types";
 
 // ── Topic tree ────────────────────────────────────────────────────────────────
 
@@ -251,6 +251,44 @@ export async function awardAchievement(uid: string, id: string): Promise<boolean
   if (snap.exists()) return false; // already earned
   await setDoc(ref, { id, earnedAt: Date.now() } satisfies UserAchievement);
   return true;
+}
+
+// ── Study logs ────────────────────────────────────────────────────────────────
+
+export async function fetchStudyLog(uid: string, dateStr: string): Promise<StudyLog | null> {
+  const snap = await getDoc(doc(db, "users", uid, "study_logs", dateStr));
+  return snap.exists() ? (snap.data() as StudyLog) : null;
+}
+
+export async function saveStudyLog(uid: string, log: StudyLog): Promise<void> {
+  await setDoc(doc(db, "users", uid, "study_logs", log.date), {
+    ...log,
+    updatedAt: Date.now(),
+  });
+}
+
+export async function fetchStudyLogs(uid: string, days: number): Promise<StudyLog[]> {
+  const promises: Promise<StudyLog | null>[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    promises.push(fetchStudyLog(uid, dateStr));
+  }
+  const results = await Promise.all(promises);
+  return (results.filter(Boolean) as StudyLog[]).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function fetchStudyLogRange(uid: string, from: string, to: string): Promise<StudyLog[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, "users", uid, "study_logs"),
+      where("date", ">=", from),
+      where("date", "<=", to),
+      orderBy("date"),
+    )
+  );
+  return snap.docs.map(d => d.data() as StudyLog);
 }
 
 export async function checkAndAwardAchievements(

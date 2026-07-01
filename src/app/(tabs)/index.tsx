@@ -1,15 +1,19 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Animated,
+  RefreshControl, Animated, Dimensions,
 } from "react-native";
+
+const SCREEN_W = Dimensions.get("window").width;
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../lib/auth-context";
 import { fetchAttempts } from "../../lib/db";
 import { useTheme } from "../../lib/theme-context";
 import { subjectAccent, accuracyColor, pctStr } from "../../lib/theme";
 import { Spinner } from "../../components/Spinner";
 import { formatDuration } from "../../lib/timer";
+import StudyAnalyticsPanel from "../../components/StudyAnalyticsPanel";
 import type { Attempt, TopicStats } from "../../lib/types";
 
 type Tab = "overall" | "subject" | "topic";
@@ -101,15 +105,24 @@ export default function ReportCard() {
   const { user }  = useAuth();
   const router    = useRouter();
   const { theme } = useTheme();
+  const insets    = useSafeAreaInsets();
 
-  const [tab,      setTab]      = useState<Tab>("overall");
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [pageView,   setPageView]   = useState<"report" | "study">("report");
+  const [tab,        setTab]        = useState<Tab>("overall");
+  const [attempts,   setAttempts]   = useState<Attempt[]>([]);
+  const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Horizontal page slide animation
+  const slideX = useRef(new Animated.Value(0)).current;
+  const switchPage = (view: "report" | "study") => {
+    const toValue = view === "study" ? -SCREEN_W : 0;
+    setPageView(view);
+    Animated.spring(slideX, { toValue, useNativeDriver: true, friction: 14, tension: 80 }).start();
+  };
 
   // Animated underline for tab switcher
   const tabAnim = useRef(new Animated.Value(0)).current;
-
   const onTabPress = (t: Tab) => {
     Animated.spring(tabAnim, { toValue: TABS.indexOf(t), useNativeDriver: false, friction: 7 }).start();
     setTab(t);
@@ -165,30 +178,61 @@ export default function ReportCard() {
     outputRange: ["0%", `${100 / 3}%`, `${200 / 3}%`],
   });
 
-  if (loading) return (
-    <View style={{ flex: 1, backgroundColor: theme.bg, justifyContent: "center", alignItems: "center" }}>
-      <Spinner icon="📊" label="Loading Reports" sublabel="Analysing your attempts…" />
-    </View>
-  );
-
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.bg }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.primary} />}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Header ────────────────────────────────────────────────────────────── */}
-      <View style={s.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.title, { color: theme.text }]}>Report Card</Text>
-          <Text style={[s.sub,   { color: theme.sub  }]}>SSC CGL · {totalAttempts} sessions</Text>
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+
+      {/* ── Shared tappable header ────────────────────────────────────────────── */}
+      <View style={{ backgroundColor: theme.bg2, paddingTop: insets.top }}>
+        <View style={{ flexDirection: "row" }}>
+          {/* Left half — Report Card */}
+          <TouchableOpacity
+            onPress={() => switchPage("report")}
+            activeOpacity={0.85}
+            style={{
+              flex: 1, alignItems: "center", paddingVertical: 18,
+              backgroundColor: pageView === "report" ? theme.card : "transparent",
+            }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: pageView === "report" ? "900" : "600", color: pageView === "report" ? theme.primary : theme.muted }}>
+              Report Card
+            </Text>
+          </TouchableOpacity>
+
+          {/* Right half — Study */}
+          <TouchableOpacity
+            onPress={() => switchPage("study")}
+            activeOpacity={0.85}
+            style={{
+              flex: 1, alignItems: "center", paddingVertical: 18,
+              backgroundColor: pageView === "study" ? theme.card : "transparent",
+            }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: pageView === "study" ? "900" : "600", color: pageView === "study" ? theme.primary : theme.muted }}>
+              Study
+            </Text>
+          </TouchableOpacity>
         </View>
-        {streak > 0 && (
-          <View style={[s.streakBadge, { backgroundColor: theme.amber + "22", borderColor: theme.amber }]}>
-            <Text style={{ fontSize: 16 }}>🔥</Text>
-            <Text style={{ fontSize: 15, fontWeight: "900", color: theme.amber }}>{streak}</Text>
-          </View>
-        )}
+      </View>
+
+      {/* ── Sliding pages ────────────────────────────────────────────────────── */}
+      <View style={{ flex: 1, overflow: "hidden" }}>
+      <Animated.View style={{ flex: 1, flexDirection: "row", width: SCREEN_W * 2, height: "100%", transform: [{ translateX: slideX }] }}>
+
+        {/* PAGE 1 — Report Card ─────────────────────────────────────────────── */}
+        <View style={{ width: SCREEN_W, flex: 1 }}>
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <Spinner icon="📊" label="Loading Reports" sublabel="Analysing your attempts…" />
+        </View>
+      ) : (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.bg }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.primary} />}
+        showsVerticalScrollIndicator={false}
+      >
+      {/* subtitle row */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}>
+        <Text style={[s.sub, { color: theme.sub }]}>SSC CGL · {totalAttempts} sessions</Text>
       </View>
 
 
@@ -450,6 +494,17 @@ export default function ReportCard() {
       )}
       <View style={{ height: 40 }} />
     </ScrollView>
+      )}
+        </View>{/* end PAGE 1 */}
+
+        {/* PAGE 2 — Study ───────────────────────────────────────────────────── */}
+        <View style={{ width: SCREEN_W, flex: 1 }}>
+          <StudyAnalyticsPanel />
+        </View>
+
+      </Animated.View>
+      </View>{/* overflow hidden wrapper */}
+    </View>
   );
 }
 
@@ -527,13 +582,7 @@ const styles = StyleSheet.create({
 });
 
 const s = StyleSheet.create({
-  header:    { padding: 20, paddingTop: 56, flexDirection: "row", alignItems: "center" },
-  title:     { fontSize: 26, fontWeight: "900" },
-  sub:       { fontSize: 13, marginTop: 2 },
-  streakBadge: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5,
-  },
+  sub:       { fontSize: 13 },
   tabsWrap: {
     flexDirection: "row", marginHorizontal: 16, marginBottom: 4,
     borderRadius: 12, padding: 3, position: "relative",
